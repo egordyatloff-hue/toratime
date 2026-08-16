@@ -135,7 +135,11 @@ public class AlarmReceiver extends BroadcastReceiver {
                 ch = new NotificationChannel(CHANNEL_ID, "Будильники",
                         NotificationManager.IMPORTANCE_HIGH);
                 ch.enableVibration(true);
-                ch.setSound(Settings.System.DEFAULT_ALARM_ALERT_URI);
+                ch.setSound(Settings.System.DEFAULT_ALARM_ALERT_URI,
+                        new android.media.AudioAttributes.Builder()
+                                .setUsage(android.media.AudioAttributes.USAGE_ALARM)
+                                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                .build());
                 nm.createNotificationChannel(ch);
             }
         }
@@ -149,7 +153,7 @@ public class AlarmReceiver extends BroadcastReceiver {
         Notification.Builder b = Build.VERSION.SDK_INT >= 26
                 ? new Notification.Builder(context, CHANNEL_ID)
                 : new Notification.Builder(context);
-        b.setSmallIcon(android.R.drawable.ic_menu_alarm)
+        b.setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentTitle("Будильник")
                 .setContentText(text == null ? "" : text)
                 .setAutoCancel(true)
