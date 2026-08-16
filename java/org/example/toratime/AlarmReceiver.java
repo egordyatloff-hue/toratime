@@ -9,9 +9,13 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
+import android.os.PowerManager;
 import android.provider.Settings;
 import android.util.Log;
+import android.widget.Toast;
 
 import org.kivy.android.PythonActivity;
 import org.json.JSONArray;
@@ -34,6 +38,7 @@ public class AlarmReceiver extends BroadcastReceiver {
         if (ACTION_ALARM.equals(action)) {
             String text = intent.getStringExtra(EXTRA_TEXT);
             int minutes = intent.getIntExtra(EXTRA_MINUTES, -1);
+            Log.d("AlarmReceiver", "alarm fired for minutes=" + minutes);
             showNotification(context, text, minutes);
             if (minutes > 0) {
                 schedule(context, minutes, text, tomorrowTrigger(minutes));
@@ -41,6 +46,56 @@ public class AlarmReceiver extends BroadcastReceiver {
         } else if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
             rescheduleAllFromSnapshot(context);
         }
+    }
+
+    public static void requestPermissions(PythonActivity act) {
+        try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                if (act.checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+                        != PackageManager.PERMISSION_GRANTED) {
+                    act.requestPermissions(
+                            new String[]{"android.permission.POST_NOTIFICATIONS"}, 1);
+                }
+            }
+            if (Build.VERSION.SDK_INT >= 31) {
+                AlarmManager am = (AlarmManager) act.getSystemService(Context.ALARM_SERVICE);
+                if (am != null && !am.canScheduleExactAlarms()) {
+                    try {
+                        Intent i = new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM);
+                        i.setData(Uri.parse("package:" + act.getPackageName()));
+                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        act.startActivity(i);
+                    } catch (Throwable t) {
+                        Log.e("AlarmReceiver", "exact alarm request failed", t);
+                    }
+                }
+            }
+            if (Build.VERSION.SDK_INT >= 23) {
+                PowerManager pm = (PowerManager) act.getSystemService(Context.POWER_SERVICE);
+                if (pm != null && !pm.isIgnoringBatteryOptimizations(act.getPackageName())) {
+                    try {
+                        Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                        i.setData(Uri.parse("package:" + act.getPackageName()));
+                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        act.startActivity(i);
+                    } catch (Throwable t) {
+                        Log.e("AlarmReceiver", "battery opt request failed", t);
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            Log.e("AlarmReceiver", "requestPermissions failed", t);
+        }
+    }
+
+    public static void scheduleNext(Context context, int minutes, String msg) {
+        schedule(context, minutes, msg, nextTrigger(minutes));
+    }
+
+    public static void testAlarm(Context context) {
+        long when = System.currentTimeMillis() + 15000;
+        schedule(context, 0, "Тестовый будильник", when);
+        Toast.makeText(context, "Тестовый будильник через 15 сек", Toast.LENGTH_LONG).show();
     }
 
     protected static long nextTrigger(int minutes) {
@@ -79,7 +134,7 @@ public class AlarmReceiver extends BroadcastReceiver {
         return String.format(java.util.Locale.US, "%02d:%02d", minutes / 60, minutes % 60);
     }
 
-    protected static void schedule(Context context, int minutes, String msg, long when) {
+    public static void schedule(Context context, int minutes, String msg, long when) {
         AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
         if (am == null) {
             return;
@@ -93,26 +148,31 @@ public class AlarmReceiver extends BroadcastReceiver {
         try {
             AlarmManager.AlarmClockInfo info = new AlarmManager.AlarmClockInfo(when, pi);
             am.setAlarmClock(info, pi);
+            Log.d("AlarmReceiver", "setAlarmClock scheduled minutes=" + minutes + " when=" + when);
             return;
         } catch (Throwable t) {
+            Log.e("AlarmReceiver", "setAlarmClock failed", t);
         }
         if (Build.VERSION.SDK_INT >= 31) {
             try {
                 if (am.canScheduleExactAlarms()) {
                     am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, when, pi);
+                    Log.d("AlarmReceiver", "setExact scheduled minutes=" + minutes);
                     return;
                 }
             } catch (Throwable t) {
+                Log.e("AlarmReceiver", "setExact failed", t);
             }
         }
         try {
             am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, when, pi);
+            Log.d("AlarmReceiver", "setAndAllowWhileIdle scheduled minutes=" + minutes);
         } catch (Throwable t) {
             Log.e("AlarmReceiver", "schedule failed", t);
         }
     }
 
-    protected static void cancel(Context context, int minutes) {
+    public static void cancel(Context context, int minutes) {
         AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
         if (am == null) {
             return;
@@ -126,7 +186,7 @@ public class AlarmReceiver extends BroadcastReceiver {
         am.cancel(pi);
     }
 
-    protected static void showNotification(Context context, String text, int id) {
+    public static void showNotification(Context context, String text, int id) {
         NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) {
             return;
@@ -168,12 +228,13 @@ public class AlarmReceiver extends BroadcastReceiver {
         }
         try {
             nm.notify(id, b.build());
+            Log.d("AlarmReceiver", "notification shown id=" + id);
         } catch (Throwable t) {
             Log.e("AlarmReceiver", "notify failed", t);
         }
     }
 
-    protected static void rescheduleAllFromSnapshot(Context context) {
+    public static void rescheduleAllFromSnapshot(Context context) {
         Context c = context.getApplicationContext();
         SharedPreferences prefs = c.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         String json = prefs.getString(KEY_SNAPSHOT, null);
