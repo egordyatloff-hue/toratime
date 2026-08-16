@@ -90,24 +90,26 @@ public class AlarmReceiver extends BroadcastReceiver {
             flags |= PendingIntent.FLAG_IMMUTABLE;
         }
         PendingIntent pi = PendingIntent.getBroadcast(context, minutes, i, flags);
-        if (Build.VERSION.SDK_INT >= 31) {
-            try {
-                if (!am.canScheduleExactAlarms()) {
-                    Log.d("AlarmReceiver", "exact alarms not allowed, skipping " + minutes);
-                    return;
-                }
-            } catch (Throwable t) {
-                return;
-            }
-        }
         try {
-            AlarmManager.AlarmClockInfo info = new AlarmManager.AlarmClockInfo(when, null);
+            AlarmManager.AlarmClockInfo info = new AlarmManager.AlarmClockInfo(when, pi);
             am.setAlarmClock(info, pi);
             return;
         } catch (Throwable t) {
-            // fallback below
         }
-        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, when, pi);
+        if (Build.VERSION.SDK_INT >= 31) {
+            try {
+                if (am.canScheduleExactAlarms()) {
+                    am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, when, pi);
+                    return;
+                }
+            } catch (Throwable t) {
+            }
+        }
+        try {
+            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, when, pi);
+        } catch (Throwable t) {
+            Log.e("AlarmReceiver", "schedule failed", t);
+        }
     }
 
     protected static void cancel(Context context, int minutes) {
